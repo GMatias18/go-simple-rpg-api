@@ -3,18 +3,38 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"net/http"
+	"time"
+	"github.com/google/uuid"
 )
 
 type PlayerRequest struct {
-	Nickname string
-	Life     int
-	Attack   int
+	Nickname string `json:"nickname"`
+	Life     int    `json:"life"`
+	Attack   int    `json:"attack"`
 }
 
 type PlayerResponse struct {
 	Message string `json:"message"`
 }
+
+type Enemy struct {
+	Nickname string `json:"nickname"`
+	Life     int    `json:"life"`
+	Attack   int    `json:"attack"`
+}
+
+type Battle struct {
+	ID         string `json:"id"`
+	Enemy      string `json:"enemy"`
+	Player     string `json:"player"`
+	DiceThrown int    `json:"dice_thrown"`
+}
+
+var players []PlayerRequest
+var enemies []Enemy
+var battles []Battle
 
 func AddPlayer(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
@@ -70,7 +90,7 @@ func LoadPlayers(w http.ResponseWriter, r *http.Request) {
 func DeletePlayer(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	nickname := r.PathValue("nickname")
+	nickname := r.URL.Query().Get("nickname")
 
 	for i, player := range players {
 		if player.Nickname == nickname {
@@ -89,7 +109,7 @@ func DeletePlayer(w http.ResponseWriter, r *http.Request) {
 func LoadPlayerByNickname(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	nickname := r.PathValue("nickname")
+	nickname := r.URL.Query().Get("nickname")
 
 	for _, player := range players {
 		if player.Nickname == nickname {
@@ -107,7 +127,7 @@ func LoadPlayerByNickname(w http.ResponseWriter, r *http.Request) {
 
 func SavePlayer(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	nickname := r.PathValue("nickname")
+	nickname := r.URL.Query().Get("nickname")
 
 	var playerRequest PlayerRequest
 	if err := json.NewDecoder(r.Body).Decode(&playerRequest); err != nil {
@@ -146,21 +166,219 @@ func SavePlayer(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-var players []PlayerRequest
+func AddEnemy(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	var enemyRequest struct {
+		Nickname string `json:"nickname"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&enemyRequest); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(PlayerResponse{Message: "Internal Server Error"})
+		return
+	}
+
+	if enemyRequest.Nickname == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(PlayerResponse{Message: "Enemy nickname is required"})
+		return
+	}
+
+	for _, enemy := range enemies {
+		if enemy.Nickname == enemyRequest.Nickname {
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(PlayerResponse{Message: "Enemy nickname already exists"})
+			return
+		}
+	}
+
+	rand.Seed(time.Now().UnixNano())
+	newEnemy := Enemy{
+		Nickname: enemyRequest.Nickname,
+		Life:     rand.Intn(10) + 1,
+		Attack:   rand.Intn(10) + 1,
+	}
+
+	enemies = append(enemies, newEnemy)
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(newEnemy)
+}
+
+func LoadEnemies(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(enemies)
+}
+
+func LoadEnemyByNickname(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	nickname := r.URL.Query().Get("nickname")
+
+	for _, enemy := range enemies {
+		if enemy.Nickname == nickname {
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(enemy)
+			return
+		}
+	}
+
+	w.WriteHeader(http.StatusNotFound)
+	json.NewEncoder(w).Encode(PlayerResponse{Message: "Enemy nickname not found"})
+}
+
+func UpdateEnemy(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	nickname := r.URL.Query().Get("nickname")
+
+	var enemyRequest struct {
+		Nickname string `json:"nickname"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&enemyRequest); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(PlayerResponse{Message: "Internal Server Error"})
+		return
+	}
+
+	if enemyRequest.Nickname == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(PlayerResponse{Message: "Enemy nickname is required"})
+		return
+	}
+
+	indexEnemy := -1
+	for i, enemy := range enemies {
+		if enemy.Nickname == nickname {
+			indexEnemy = i
+		}
+		if enemy.Nickname == enemyRequest.Nickname {
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(PlayerResponse{Message: "Enemy nickname already exists"})
+			return
+		}
+	}
+
+	if indexEnemy != -1 {
+		enemies[indexEnemy].Nickname = enemyRequest.Nickname
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(enemies[indexEnemy])
+		return
+	}
+
+	w.WriteHeader(http.StatusBadRequest)
+	json.NewEncoder(w).Encode(PlayerResponse{Message: "Enemy nickname not found"})
+}
+
+func DeleteEnemy(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	nickname := r.URL.Query().Get("nickname")
+
+	for i, enemy := range enemies {
+		if enemy.Nickname == nickname {
+			enemies = append(enemies[:i], enemies[i+1:]...)
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+	}
+
+	w.WriteHeader(http.StatusNotFound)
+	json.NewEncoder(w).Encode(PlayerResponse{Message: "Enemy nickname not found"})
+}
+
+func CreateBattle(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	var battleRequest struct {
+		Enemy  string `json:"enemy"`
+		Player string `json:"player"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&battleRequest); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(PlayerResponse{Message: "Internal Server Error"})
+		return
+	}
+
+	var player PlayerRequest
+	var enemy Enemy
+	playerFound := false
+	enemyFound := false
+
+	for _, p := range players {
+		if p.Nickname == battleRequest.Player {
+			player = p
+			playerFound = true
+			break
+		}
+	}
+
+	for _, e := range enemies {
+		if e.Nickname == battleRequest.Enemy {
+			enemy = e
+			enemyFound = true
+			break
+		}
+	}
+
+	if !playerFound || !enemyFound {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(PlayerResponse{Message: "Player or Enemy not found"})
+		return
+	}
+
+	if player.Life <= 0 || enemy.Life <= 0 {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(PlayerResponse{Message: "One of the combatants is dead, battle cannot proceed"})
+		return
+	}
+
+	diceThrown := rand.Intn(6) + 1
+	damage := player.Attack + diceThrown
+
+	if damage >= enemy.Life {
+		enemy.Life = 0
+	} else {
+		enemy.Life -= damage
+	}
+
+	if enemy.Attack > player.Life {
+		player.Life = 0
+	} else {
+		player.Life -= enemy.Attack
+	}
+
+	battle := Battle{
+		ID:         uuid.New().String(),
+		Enemy:      enemy.Nickname,
+		Player:     player.Nickname,
+		DiceThrown: diceThrown,
+	}
+	battles = append(battles, battle)
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(battle)
+}
 
 func main() {
-	mux := http.NewServeMux()
+	http.HandleFunc("/player", AddPlayer)
+	http.HandleFunc("/players", LoadPlayers)
+	http.HandleFunc("/player/delete", DeletePlayer)
+	http.HandleFunc("/player/update", SavePlayer)
+	http.HandleFunc("/player/load", LoadPlayerByNickname)
 
-	mux.HandleFunc("POST /player", AddPlayer)
-	mux.HandleFunc("GET /player", LoadPlayers)
-	mux.HandleFunc("DELETE /player/{nickname}", DeletePlayer)
-	mux.HandleFunc("GET /player/{nickname}", LoadPlayerByNickname)
-	mux.HandleFunc("PUT /player/{nickname}", SavePlayer)
+	http.HandleFunc("/enemy", AddEnemy)
+	http.HandleFunc("/enemies", LoadEnemies)
+	http.HandleFunc("/enemy/delete", DeleteEnemy)
+	http.HandleFunc("/enemy/update", UpdateEnemy)
+	http.HandleFunc("/enemy/load", LoadEnemyByNickname)
 
-	fmt.Println("Server is running on port 8080")
-	err := http.ListenAndServe(":8080", mux)
+	http.HandleFunc("/battle", CreateBattle)
 
-	if err != nil {
-		fmt.Println(err)
-	}
+	fmt.Println("Server listening on port 8080")
+	http.ListenAndServe(":8080", nil)
 }
