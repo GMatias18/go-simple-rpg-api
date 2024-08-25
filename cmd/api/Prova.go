@@ -49,6 +49,8 @@ var battles []Battle
 var items []Item
 
 func main() {
+	initializeItems()
+
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/player", func(w http.ResponseWriter, r *http.Request) {
@@ -113,13 +115,21 @@ func main() {
 	http.ListenAndServe(":8080", mux)
 }
 
+func initializeItems() {
+	items = []Item{
+		{ID: uuid.NewString(), Name: "Espada do Poder", EffectType: "attack", EffectValue: 5},
+		{ID: uuid.NewString(), Name: "Escudo de Aço", EffectType: "defense", EffectValue: 3},
+		{ID: uuid.NewString(), Name: "Amuleto da Vida", EffectType: "life", EffectValue: 10},
+	}
+}
+
 func AddItem(w http.ResponseWriter, r *http.Request) {
 	var item Item
 	if err := json.NewDecoder(r.Body).Decode(&item); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
-	item.ID = uuid.New().String()
+	item.ID = uuid.NewString()
 	items = append(items, item)
 	json.NewEncoder(w).Encode(item)
 }
@@ -183,10 +193,10 @@ func CreateBattle(w http.ResponseWriter, r *http.Request) {
 	}
 	ApplyItemEffects(player, enemy)  // Apply item effects before the battle
 	diceThrown := rand.Intn(6) + 1
-	damageToEnemy := max(0, player.Attack - enemy.Defense + diceThrown)
-	damageToPlayer := max(0, enemy.Attack - player.Defense)
-	player.Life = max(0, player.Life - damageToPlayer)
-	enemy.Life = max(0, enemy.Life - damageToEnemy)
+	playerDamage := max(0, player.Attack - enemy.Defense + diceThrown)
+	enemyDamage := max(0, enemy.Attack - player.Defense)
+	player.Life = max(0, player.Life - enemyDamage)
+	enemy.Life = max(0, enemy.Life - playerDamage)
 	battle := Battle{
 		ID:         uuid.NewString(),
 		Enemy:      enemy.Nickname,
